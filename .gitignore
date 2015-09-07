@@ -54,8 +54,7 @@ dependency-reduced-pom.xml
 
 # LZ4 sources and Makefile
 ext/lz4ruby/Makefile
-ext/lz4ruby/lz4.?
-ext/lz4ruby/lz4hc.?
+Makefile
 
 # binaries
 *.o
