@@ -5,7 +5,7 @@ if /(mswin|mingw)/ =~ RUBY_PLATFORM
 elsif RUBY_PLATFORM == 'java'
   require 'lz4-jruby'
 else
-  require 'lz4ruby'
+  require_relative 'lz4ruby.so'
 end
 
 class LZ4
@@ -31,17 +31,42 @@ class LZ4
     return result
   end
 
+  def self.compress_with_dict(input, dict, in_size = nil, encoding = nil)
+    return _compress(input, in_size, false, dict)
+  end
+
+  def self.decompress_with_dict(input, dict, in_size = nil, encoding = nil)
+    in_size = input.bytesize if in_size == nil
+    out_size, varbyte_len = decode_varbyte(input)
+
+    if out_size < 0 || varbyte_len < 0
+      raise "Compressed data is maybe corrupted"
+    end
+
+    result = LZ4Internal::decompress_with_dict(input,
+                                               in_size,
+                                               varbyte_len,
+                                               out_size,
+                                               dict,
+                                               dict.size())
+    result.force_encoding(encoding) if encoding != nil
+
+    return result
+  end
+
   # @deprecated Use {#decompress} and will be removed.
   def self.uncompress(input, in_size = nil)
     return decompress(input, in_size)
   end
 
   private
-  def self._compress(input, in_size, high_compression)
+  def self._compress(input, in_size, high_compression, dict = nil)
     in_size = input.bytesize if in_size == nil
     header = encode_varbyte(in_size)
 
-    if high_compression
+    if dict != nil
+      return LZ4Internal.compress_with_dict(header, input, in_size, dict, dict.size())
+    elsif high_compression
       return LZ4Internal.compressHC(header, input, in_size)
     else
       return LZ4Internal.compress(header, input, in_size)
