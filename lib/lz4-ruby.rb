@@ -1,3 +1,5 @@
+# Copyright (C) 2015  Metaswitch Networks Ltd
+# - Add support for dictionary support
 if /(mswin|mingw)/ =~ RUBY_PLATFORM
   /(\d+\.\d+)/ =~ RUBY_VERSION
   ver = $1

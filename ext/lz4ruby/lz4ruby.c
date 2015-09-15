@@ -1,3 +1,6 @@
+// Copyright (C) 2015  Metaswitch Networks Ltd
+// - Add support for dictionary support
+
 #include <ruby.h>
 #include "lz4.h"
 #include "lz4hc.h"
