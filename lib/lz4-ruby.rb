@@ -18,7 +18,7 @@ class LZ4
   def self.compressHC(input, in_size = nil)
     return _compress(input, in_size, true)
   end
-  
+
   def self.decompress(input, in_size = nil, encoding = nil)
     in_size = input.bytesize if in_size == nil
     out_size, varbyte_len = decode_varbyte(input)
@@ -26,7 +26,7 @@ class LZ4
     if out_size < 0 || varbyte_len < 0
       raise "Compressed data is maybe corrupted"
     end
-    
+
     result = LZ4Internal::uncompress(input, in_size, varbyte_len, out_size)
     result.force_encoding(encoding) if encoding != nil
 
@@ -36,7 +36,7 @@ class LZ4
   def self.compress_with_dict(input, dict, in_size = nil)
     in_size = input.bytesize if in_size == nil
     header = encode_varbyte(in_size)
-    return LZ4Internal.compress_with_dict(header, input, in_size, dict)
+    return LZ4Internal::compress_with_dict(header, input, in_size, dict)
   end
 
   def self.decompress_with_dict(input, dict, in_size = nil, encoding = nil)
