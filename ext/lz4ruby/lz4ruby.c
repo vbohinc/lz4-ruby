@@ -135,6 +135,9 @@ static VALUE lz4internal_compress_with_dict(VALUE self,
   const char *src_p;
   int src_size;
 
+  const char *dict_p;
+  int dict_size;
+
   const char *header_p;
   int header_size;
 
@@ -160,7 +163,10 @@ static VALUE lz4internal_compress_with_dict(VALUE self,
   buf = RSTRING_PTR(result);
 
   memcpy(buf, header_p, header_size);
-  LZ4_loadDict(lz4Stream, (const char*)dictionary, (int)dictSize);
+
+  dict_p = RSTRING_PTR(StringValue(dictionary));
+  dict_size = RSTRING_LEN(StringValue(dictionary));
+  LZ4_loadDict(lz4Stream, dict_p, dict_size);
 
   comp_size = LZ4_compress_continue(lz4Stream,
                                     src_p,
@@ -182,6 +188,10 @@ static VALUE lz4internal_decompress_with_dict(VALUE self,
                                               VALUE dictSize) {
   const char *src_p;
   int src_size;
+
+  const char *dict_p;
+  int dict_size;
+
   int header_size;
   VALUE result;
   char *buf;
@@ -195,14 +205,18 @@ static VALUE lz4internal_decompress_with_dict(VALUE self,
   header_size = NUM2INT(offset);
   buf_size = NUM2INT(out_size);
 
+  dict_p = RSTRING_PTR(StringValue(dictionary));
+  dict_size = RSTRING_LEN(StringValue(dictionary));
+
   result = rb_str_new(NULL, buf_size);
   buf = RSTRING_PTR(result);
+
   read_bytes = LZ4_decompress_safe_usingDict(src_p + header_size,
                                              buf,
                                              src_size - header_size,
                                              buf_size,
-                                             (const char*)dictionary,
-                                             (int)dictSize);
+                                             dict_p,
+                                             dict_size);
   if (read_bytes < 0) {
     rb_raise(lz4_error, "Compressed data is maybe corrupted.");
   }
