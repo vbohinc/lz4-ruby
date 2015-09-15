@@ -5,7 +5,7 @@ if /(mswin|mingw)/ =~ RUBY_PLATFORM
 elsif RUBY_PLATFORM == 'java'
   require 'lz4-jruby'
 else
-  require_relative 'lz4ruby.so'
+  require 'lz4ruby'
 end
 
 class LZ4
@@ -31,8 +31,10 @@ class LZ4
     return result
   end
 
-  def self.compress_with_dict(input, dict, in_size = nil, encoding = nil)
-    return _compress(input, in_size, false, dict)
+  def self.compress_with_dict(input, dict, in_size = nil)
+    in_size = input.bytesize if in_size == nil
+    header = encode_varbyte(in_size)
+    return LZ4Internal.compress_with_dict(header, input, in_size, dict)
   end
 
   def self.decompress_with_dict(input, dict, in_size = nil, encoding = nil)
@@ -47,8 +49,7 @@ class LZ4
                                                in_size,
                                                varbyte_len,
                                                out_size,
-                                               dict,
-                                               dict.size())
+                                               dict)
     result.force_encoding(encoding) if encoding != nil
 
     return result
@@ -60,13 +61,11 @@ class LZ4
   end
 
   private
-  def self._compress(input, in_size, high_compression, dict = nil)
+  def self._compress(input, in_size, high_compression)
     in_size = input.bytesize if in_size == nil
     header = encode_varbyte(in_size)
 
-    if dict != nil
-      return LZ4Internal.compress_with_dict(header, input, in_size, dict, dict.size())
-    elsif high_compression
+    if high_compression
       return LZ4Internal.compressHC(header, input, in_size)
     else
       return LZ4Internal.compress(header, input, in_size)

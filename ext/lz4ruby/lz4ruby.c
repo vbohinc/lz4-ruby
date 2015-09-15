@@ -130,8 +130,7 @@ static VALUE lz4internal_compress_with_dict(VALUE self,
                                             VALUE header,
                                             VALUE input,
                                             VALUE in_size,
-                                            VALUE dictionary,
-                                            VALUE dictSize) {
+                                            VALUE dictionary) {
   const char *src_p;
   int src_size;
 
@@ -147,8 +146,7 @@ static VALUE lz4internal_compress_with_dict(VALUE self,
 
   int comp_size;
 
-  LZ4_stream_t* const lz4Stream = LZ4_createStream();
-  LZ4_resetStream(lz4Stream);
+  LZ4_stream_t* lz4Stream;
 
   Check_Type(input, T_STRING);
   src_p = RSTRING_PTR(input);
@@ -166,6 +164,8 @@ static VALUE lz4internal_compress_with_dict(VALUE self,
 
   dict_p = RSTRING_PTR(StringValue(dictionary));
   dict_size = RSTRING_LEN(StringValue(dictionary));
+
+  lz4Stream = LZ4_createStream();
   LZ4_loadDict(lz4Stream, dict_p, dict_size);
 
   comp_size = LZ4_compress_continue(lz4Stream,
@@ -184,8 +184,7 @@ static VALUE lz4internal_decompress_with_dict(VALUE self,
                                               VALUE in_size,
                                               VALUE offset,
                                               VALUE out_size,
-                                              VALUE dictionary,
-                                              VALUE dictSize) {
+                                              VALUE dictionary) {
   const char *src_p;
   int src_size;
 
@@ -457,8 +456,8 @@ void Init_lz4ruby(void) {
   rb_define_module_function(lz4internal, "compressHC", lz4internal_compressHC, 3);
   rb_define_module_function(lz4internal, "uncompress", lz4internal_uncompress, 4);
 
-  rb_define_module_function(lz4internal, "compress_with_dict", lz4internal_compress_with_dict, 5);
-  rb_define_module_function(lz4internal, "decompress_with_dict", lz4internal_decompress_with_dict, 6);
+  rb_define_module_function(lz4internal, "compress_with_dict", lz4internal_compress_with_dict, 4);
+  rb_define_module_function(lz4internal, "decompress_with_dict", lz4internal_decompress_with_dict, 5);
 
   //rb_define_module_function(lz4internal, "raw_compress", lz4internal_raw_compress, -1);
   //rb_define_module_function(lz4internal, "raw_compressHC", lz4internal_raw_compressHC, -1);
