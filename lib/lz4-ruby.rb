@@ -1,3 +1,5 @@
+# Copyright (C) 2015  Metaswitch Networks Ltd
+# - Add support for dictionary support
 if /(mswin|mingw)/ =~ RUBY_PLATFORM
   /(\d+\.\d+)/ =~ RUBY_VERSION
   ver = $1
@@ -16,7 +18,7 @@ class LZ4
   def self.compressHC(input, in_size = nil)
     return _compress(input, in_size, true)
   end
-  
+
   def self.decompress(input, in_size = nil, encoding = nil)
     in_size = input.bytesize if in_size == nil
     out_size, varbyte_len = decode_varbyte(input)
@@ -24,8 +26,32 @@ class LZ4
     if out_size < 0 || varbyte_len < 0
       raise "Compressed data is maybe corrupted"
     end
-    
+
     result = LZ4Internal::uncompress(input, in_size, varbyte_len, out_size)
+    result.force_encoding(encoding) if encoding != nil
+
+    return result
+  end
+
+  def self.compress_with_dict(input, dict, in_size = nil)
+    in_size = input.bytesize if in_size == nil
+    header = encode_varbyte(in_size)
+    return LZ4Internal::compress_with_dict(header, input, in_size, dict)
+  end
+
+  def self.decompress_with_dict(input, dict, in_size = nil, encoding = nil)
+    in_size = input.bytesize if in_size == nil
+    out_size, varbyte_len = decode_varbyte(input)
+
+    if out_size < 0 || varbyte_len < 0
+      raise "Compressed data is maybe corrupted"
+    end
+
+    result = LZ4Internal::decompress_with_dict(input,
+                                               in_size,
+                                               varbyte_len,
+                                               out_size,
+                                               dict)
     result.force_encoding(encoding) if encoding != nil
 
     return result
@@ -109,40 +135,25 @@ class LZ4
       return _compress(source, true, options)
     end
 
-    private
-    def self._compress(source, high_compression, options = {})
-      input_size = options[:input_size]
-      if input_size == nil
-        input_size = source.bytesize
+    # Compresses `source` string using a dictionary.
+    #
+    # @param [String] source string to be compressed
+    # @param [String] dict the dictionary to use.
+    # @param [Hash] options
+    # @option options [Fixnum] :input_size byte size of source to compress (must be less than or equal to `source.bytesize`)
+    # @option options [String] :dest output buffer which will receive compressed string
+    # @option options [Fixnum] :max_output_size acceptable maximum output size
+    #
+    # @return [String, Fixnum] compressed string and its length.
+    def self.compress_with_dict(source, dict, options = {})
+      source, input_size, dest, max_output_size =
+        check_buffer_options_compress(source, options)
 
-      else
-        if source.bytesize < input_size
-          raise ArgumentError, "`:input_size` (#{input_size}) must be less than or equal `source.bytesize` (#{source.bytesize})"
-        end
-      end
-
-      dest = options[:dest]
-
-      max_output_size = options[:max_output_size]
-      if max_output_size == nil
-        if dest != nil
-          max_output_size = dest.bytesize
-        else
-          max_output_size = input_size + (input_size / 255) + 16 if dest == nil
-        end
-
-      else
-        if dest != nil && dest.bytesize < max_output_size
-          raise ArgumentError, "`:dest` buffer size (#{dest.bytesize}) must be greater than or equal `:max_output_size` (#{max_output_size})"
-        end
-      end
-
-      result = nil
-      if high_compression
-        result = LZ4Internal.compressHC_raw(source, input_size, dest, max_output_size)
-      else
-        result = LZ4Internal.compress_raw(source, input_size, dest, max_output_size)
-      end
+      result = LZ4Internal.compress_with_dict_raw(source,
+                                                  input_size,
+                                                  dest,
+                                                  max_output_size,
+                                                  dict)
 
       if result[1] <= 0
         raise LZ4Error, "compression failed"
@@ -160,6 +171,100 @@ class LZ4
     # @option options [String] :dest output buffer which will receive decompressed string
     # @return [String, Fixnum] decompressed string and its length.
     def self.decompress(source, max_output_size, options = {})
+      source, input_size, dest, max_output_size =
+        check_buffer_options_decompress(source, max_output_size, options)
+
+      result = LZ4Internal.decompress_raw(source, input_size, dest, max_output_size)
+
+      if result[1] <= 0
+        return "", 0 if source == "\x00"
+        raise LZ4Error, "decompression failed"
+      end
+
+      return result[0], result[1]
+    end
+
+    # Decompresses `source` compressed string that was compressed with a
+    # dictionary.
+    #
+    # @param [String] source
+    # @param [Fixnum] max_output_size
+    # @param [String] dict the dictionary used to compress the source.
+    # @param [Hash] options
+    # @option options [Fixnum] :input_size byte size of source to decompress (must be less than or equal to `source.bytesize`)
+    # @option options [String] :dest output buffer which will receive decompressed string
+    #
+    # @return [String, Fixnum] decompressed string and its length.
+    def self.decompress_with_dict(source, max_output_size, dict, options = {})
+      source, input_size, dest, max_output_size =
+        check_buffer_options_decompress(source, max_output_size, options)
+
+      result = LZ4Internal.decompress_with_dict_raw(source,
+                                                    input_size,
+                                                    dest,
+                                                    max_output_size,
+                                                    dict)
+
+      if result[1] <= 0
+        return "", 0 if source == "\x00"
+        raise LZ4Error, "decompression failed"
+      end
+
+      return result[0], result[1]
+    end
+
+    private
+    def self.check_buffer_options_compress(source, options)
+      input_size = options[:input_size]
+      if input_size == nil
+        input_size = source.bytesize
+
+      else
+        if source.bytesize < input_size
+          raise ArgumentError, "`:input_size` (#{input_size}) must be less than or equal `source.bytesize` (#{source.bytesize})"
+        end
+      end
+
+      dest = options[:dest]
+
+      max_output_size = options[:max_output_size]
+      if max_output_size == nil
+        if dest != nil
+          max_output_size = dest.bytesize
+        else
+          max_output_size = input_size + (input_size / 255) + 16
+        end
+
+      else
+        if dest != nil && dest.bytesize < max_output_size
+          raise ArgumentError, "`:dest` buffer size (#{dest.bytesize}) must be greater than or equal `:max_output_size` (#{max_output_size})"
+        end
+      end
+
+      return source, input_size, dest, max_output_size
+    end
+
+    private
+    def self._compress(source, high_compression, options = {})
+      source, input_size, dest, max_output_size =
+        check_buffer_options_compress(source, options)
+
+      result = nil
+      if high_compression
+        result = LZ4Internal.compressHC_raw(source, input_size, dest, max_output_size)
+      else
+        result = LZ4Internal.compress_raw(source, input_size, dest, max_output_size)
+      end
+
+      if result[1] <= 0
+        raise LZ4Error, "compression failed"
+      end
+
+      return result[0], result[1]
+    end
+
+    private
+    def self.check_buffer_options_decompress(source, max_output_size, options)
       input_size = options[:input_size]
       if input_size == nil
         input_size = source.bytesize
@@ -176,14 +281,7 @@ class LZ4
         raise ArgumentError, "`:dest` buffer size (#{dest.bytesize}) must be greater than or equal `max_output_size` (#{max_output_size})"
       end
 
-      result = LZ4Internal.decompress_raw(source, input_size, dest, max_output_size)
-
-      if result[1] <= 0
-        return "", 0 if source == "\x00"
-        raise LZ4Error, "decompression failed"
-      end
-
-      return result[0], result[1]
+      return source, input_size, dest, max_output_size
     end
   end
 end

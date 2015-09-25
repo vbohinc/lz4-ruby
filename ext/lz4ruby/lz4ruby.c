@@ -1,3 +1,6 @@
+// Copyright (C) 2015  Metaswitch Networks Ltd
+// - Add support for dictionary support
+
 #include <ruby.h>
 #include "lz4.h"
 #include "lz4hc.h"
@@ -116,7 +119,7 @@ static VALUE lz4internal_compressHC_raw(
 	_output_buffer,
 	_max_output_size);
 }
-					
+
 
 static VALUE lz4internal_compress(VALUE self, VALUE header, VALUE input, VALUE in_size) {
   return compress_internal(LZ4_compress, header, input, in_size);
@@ -124,6 +127,103 @@ static VALUE lz4internal_compress(VALUE self, VALUE header, VALUE input, VALUE i
 
 static VALUE lz4internal_compressHC(VALUE self, VALUE header, VALUE input, VALUE in_size) {
   return compress_internal(LZ4_compressHC, header, input, in_size);
+}
+
+static VALUE lz4internal_compress_with_dict(VALUE self,
+                                            VALUE header,
+                                            VALUE input,
+                                            VALUE in_size,
+                                            VALUE dictionary) {
+  const char *src_p;
+  int src_size;
+
+  const char *dict_p;
+  int dict_size;
+
+  const char *header_p;
+  int header_size;
+
+  VALUE result;
+  char *buf;
+  int buf_size;
+
+  int comp_size;
+
+  LZ4_stream_t* lz4Stream;
+
+  Check_Type(input, T_STRING);
+  src_p = RSTRING_PTR(input);
+  src_size = NUM2INT(in_size);
+  buf_size = LZ4_compressBound(src_size);
+
+  Check_Type(header, T_STRING);
+  header_p = RSTRING_PTR(header);
+  header_size = RSTRING_LEN(header);
+
+  result = rb_str_new(NULL, buf_size + header_size);
+  buf = RSTRING_PTR(result);
+
+  memcpy(buf, header_p, header_size);
+
+  dict_p = RSTRING_PTR(StringValue(dictionary));
+  dict_size = RSTRING_LEN(StringValue(dictionary));
+
+  lz4Stream = LZ4_createStream();
+  LZ4_loadDict(lz4Stream, dict_p, dict_size);
+
+  comp_size = LZ4_compress_continue(lz4Stream,
+                                    src_p,
+                                    buf + header_size,
+                                    src_size);
+
+  rb_str_resize(result, comp_size + header_size);
+  LZ4_freeStream(lz4Stream);
+
+  return result;
+}
+
+static VALUE lz4internal_decompress_with_dict(VALUE self,
+                                              VALUE input,
+                                              VALUE in_size,
+                                              VALUE offset,
+                                              VALUE out_size,
+                                              VALUE dictionary) {
+  const char *src_p;
+  int src_size;
+
+  const char *dict_p;
+  int dict_size;
+
+  int header_size;
+  VALUE result;
+  char *buf;
+  int buf_size;
+  int read_bytes;
+
+  Check_Type(input, T_STRING);
+  src_p = RSTRING_PTR(input);
+  src_size = NUM2INT(in_size);
+
+  header_size = NUM2INT(offset);
+  buf_size = NUM2INT(out_size);
+
+  dict_p = RSTRING_PTR(StringValue(dictionary));
+  dict_size = RSTRING_LEN(StringValue(dictionary));
+
+  result = rb_str_new(NULL, buf_size);
+  buf = RSTRING_PTR(result);
+
+  read_bytes = LZ4_decompress_safe_usingDict(src_p + header_size,
+                                             buf,
+                                             src_size - header_size,
+                                             buf_size,
+                                             dict_p,
+                                             dict_size);
+  if (read_bytes < 0) {
+    rb_raise(lz4_error, "Compressed data is maybe corrupted.");
+  }
+
+  return result;
 }
 
 static VALUE lz4internal_uncompress(VALUE self, VALUE input, VALUE in_size, VALUE offset, VALUE out_size) {
@@ -189,6 +289,119 @@ static VALUE lz4internal_decompress_raw(
 
   buf_p = RSTRING_PTR(_output_buffer);
   decomp_size = LZ4_decompress_safe(src_p, buf_p, src_size, max_output_size);
+
+  if (decomp_size > 0 && needs_resize) {
+    rb_str_resize(_output_buffer, decomp_size);
+  }
+
+  return rb_ary_new3(2, _output_buffer, INT2NUM(decomp_size));
+}
+
+static VALUE lz4internal_compress_with_dict_raw(VALUE self,
+                                                VALUE _input,
+                                                VALUE _input_size,
+                                                VALUE _output_buffer,
+                                                VALUE _max_output_size,
+                                                VALUE _dictionary)
+{
+  const char *src_p;
+  int src_size;
+
+  int needs_resize;
+  char *buf_p;
+
+  int max_output_size;
+
+  int comp_size;
+
+  const char *dict_p;
+  int dict_size;
+
+  LZ4_stream_t* lz4Stream;
+
+  Check_Type(_input, T_STRING);
+  src_p = RSTRING_PTR(_input);
+  src_size = NUM2INT(_input_size);
+
+  if (NIL_P(_output_buffer)) {
+    needs_resize = 1;
+    _output_buffer = rb_str_new(NULL, _max_output_size);
+
+  } else {
+    needs_resize = 0;
+  }
+
+  buf_p = RSTRING_PTR(_output_buffer);
+  max_output_size = NUM2INT(_max_output_size);
+
+  dict_p = RSTRING_PTR(StringValue(_dictionary));
+  dict_size = RSTRING_LEN(StringValue(_dictionary));
+
+  lz4Stream = LZ4_createStream();
+  LZ4_loadDict(lz4Stream, dict_p, dict_size);
+
+  comp_size = LZ4_compress_limitedOutput_continue(lz4Stream,
+                                                  src_p,
+                                                  buf_p,
+                                                  src_size,
+                                                  max_output_size);
+  LZ4_freeStream(lz4Stream);
+
+  if (comp_size > 0 && needs_resize) {
+    rb_str_resize(_output_buffer, comp_size);
+  }
+
+  return rb_ary_new3(2, _output_buffer, INT2NUM(comp_size));
+}
+
+static VALUE lz4internal_decompress_with_dict_raw(VALUE self,
+                                                  VALUE _input,
+                                                  VALUE _input_size,
+                                                  VALUE _output_buffer,
+                                                  VALUE _max_output_size,
+                                                  VALUE _dictionary)
+{
+  const char *src_p;
+  int src_size;
+
+  int max_output_size;
+
+  int needs_resize;
+  char *buf_p;
+
+  int decomp_size;
+
+  const char *dict_p;
+  int dict_size;
+
+  Check_Type(_input, T_STRING);
+  src_p = RSTRING_PTR(_input);
+  src_size = NUM2INT(_input_size);
+
+  max_output_size = NUM2INT(_max_output_size);
+
+  if (NIL_P(_output_buffer)) {
+    needs_resize = 1;
+    _output_buffer = rb_str_new(NULL, max_output_size);
+
+  } else {
+    needs_resize = 0;
+  }
+
+  buf_p = RSTRING_PTR(_output_buffer);
+
+  dict_p = RSTRING_PTR(StringValue(_dictionary));
+  dict_size = RSTRING_LEN(StringValue(_dictionary));
+
+  decomp_size = LZ4_decompress_safe_usingDict(src_p,
+                                              buf_p,
+                                              src_size,
+                                              max_output_size,
+                                              dict_p,
+                                              dict_size);
+  if (decomp_size < 0) {
+    rb_raise(lz4_error, "Compressed data is maybe corrupted.");
+  }
 
   if (decomp_size > 0 && needs_resize) {
     rb_str_resize(_output_buffer, decomp_size);
@@ -359,6 +572,9 @@ void Init_lz4ruby(void) {
   rb_define_module_function(lz4internal, "compressHC", lz4internal_compressHC, 3);
   rb_define_module_function(lz4internal, "uncompress", lz4internal_uncompress, 4);
 
+  rb_define_module_function(lz4internal, "compress_with_dict", lz4internal_compress_with_dict, 4);
+  rb_define_module_function(lz4internal, "decompress_with_dict", lz4internal_decompress_with_dict, 5);
+
   //rb_define_module_function(lz4internal, "raw_compress", lz4internal_raw_compress, -1);
   //rb_define_module_function(lz4internal, "raw_compressHC", lz4internal_raw_compressHC, -1);
   //rb_define_module_function(lz4internal, "raw_uncompress", lz4internal_raw_uncompress, -1);
@@ -366,6 +582,9 @@ void Init_lz4ruby(void) {
   rb_define_module_function(lz4internal, "compress_raw", lz4internal_compress_raw, 4);
   rb_define_module_function(lz4internal, "compressHC_raw", lz4internal_compressHC_raw, 4);
   rb_define_module_function(lz4internal, "decompress_raw", lz4internal_decompress_raw, 4);
+
+  rb_define_module_function(lz4internal, "compress_with_dict_raw", lz4internal_compress_with_dict_raw, 5);
+  rb_define_module_function(lz4internal, "decompress_with_dict_raw", lz4internal_decompress_with_dict_raw, 5);
 
   lz4_error = rb_define_class_under(lz4internal, "Error", rb_eStandardError);
 }

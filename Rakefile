@@ -15,22 +15,22 @@ require 'rake'
 require 'jeweler'
 jeweler_tasks = Jeweler::Tasks.new do |gem|
   # gem is a Gem::Specification... see http://docs.rubygems.org/read/chapter/20 for more options
-  gem.name = "lz4-ruby"
-  gem.homepage = "http://github.com/komiya-atsushi/lz4-ruby"
+  gem.name = "lz4-ruby-msw"
+  gem.homepage = "http://github.com/Metaswitch/lz4-ruby"
   gem.license = "MIT"
   gem.summary = %Q{Ruby bindings for LZ4 (Extremely Fast Compression algorithm).}
   gem.description = %Q{Ruby bindings for LZ4. LZ4 is a very fast lossless compression algorithm.}
-  gem.email = "komiya.atsushi@gmail.com"
-  gem.authors = ["KOMIYA Atsushi"]
+  gem.email = "clearwater-support@metaswitch.com"
+  gem.authors = ["KOMIYA Atsushi", "Metaswitch Networks"]
   gem.extensions = ["ext/lz4ruby/extconf.rb"]
-  
+
   gem.files.exclude("*.sh")
-  
+
   gem.files.include("ext/lz4ruby/*.c")
   gem.files.include("ext/lz4ruby/*.h")
 
   gem.required_ruby_version = '>= 1.9'
-  
+
   # dependencies defined in Gemfile
 end
 Jeweler::RubygemsDotOrgTasks.new
